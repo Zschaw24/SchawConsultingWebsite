@@ -1,0 +1,29 @@
+# Python compiled files
+*.pyc
+__pycache__/
+
+# Environment variables
+.env
+
+# Virtual environments
+venv/
+
+# IDE / Editor files
+.vscode/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Deployment secrets
+*.secret
+
+# Jupyter notebooks checkpoints (if any)
+.ipynb_checkpoints/
+
+# Render temporary or build files (optional)
+*.tmp
+*.swp
