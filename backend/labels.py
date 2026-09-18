@@ -88,17 +88,19 @@ class Layout:
     bar_left: float = 0.790
     bar_top: float = 0.408
 
-    # QR hard into the bottom-left corner
-    qr_top: float = 0.700
-    qr_right: float = 0.455
+    # QR hard into the bottom-left corner. Sized so its modules land on whole
+    # printer dots - at 203dpi this box gives 4 dots per module, which is the
+    # difference between a code that scans first time and one that doesn't.
+    qr_top: float = 0.650
+    qr_right: float = 0.540
 
     # Tagline centred in what's left
-    tagline_top: float = 0.440
-    tagline_bottom: float = 0.660
+    tagline_top: float = 0.425
+    tagline_bottom: float = 0.625
 
     # Rules
-    rule_heavy: float = 0.016
-    rule_light: float = 0.008
+    rule_heavy: float = 0.010
+    rule_light: float = 0.006
 
 
 #: Condition -> the glyph stamped in the header's left cell.
@@ -141,9 +143,12 @@ class Tag:
 # Fonts
 # --------------------------------------------------------------------------
 
-_MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
-_SANS_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+# Only the item number and "No." are set bold. Everything else on the tag is
+# regular weight, so the number is the one thing that reads from across a room.
+_MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+_MONO_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 _SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+_SANS_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
 def _font(path: str, px: int) -> ImageFont.FreeTypeFont:
@@ -174,13 +179,13 @@ def _text(draw: ImageDraw.ImageDraw, xy, text, font, fill=0, anchor="la") -> Non
 
 def _draw_roundel(draw: ImageDraw.ImageDraw, cx: float, cy: float, r: float) -> None:
     """The shop mark: a pine and a sun over water, in a ring."""
-    draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=0, width=max(1, round(r * 0.11)))
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=0, width=max(1, round(r * 0.07)))
     inner = r * 0.78
     # water: two strokes across the lower third
     for i, dy in enumerate((0.34, 0.56)):
         y = cy + inner * dy
         half = inner * (0.80 - i * 0.22)
-        draw.line([cx - half, y, cx + half, y], fill=0, width=max(1, round(r * 0.10)))
+        draw.line([cx - half, y, cx + half, y], fill=0, width=max(1, round(r * 0.07)))
     # pine
     peak = cy - inner * 0.62
     base = cy + inner * 0.18
@@ -237,7 +242,7 @@ def render_png(tag: Tag, stock: Stock = Stock(), layout: Layout = Layout(),
     _draw_roundel(d, glyph_x1 + rw * 0.21, hb_top + hh * 0.34, lr)
 
     # "No." on the baseline, under the logo
-    nof = _font(_MONO, max(6, round(H * 0.042)))
+    nof = _font(_MONO_BOLD, max(6, round(H * 0.042)))
     _text(d, (glyph_x1 + round(rw * 0.07), hb_bot - round(hh * 0.13)), "No.", nof, anchor="ls")
 
     # item number, right-aligned and dominant, confined to its own zone
@@ -269,7 +274,7 @@ def render_png(tag: Tag, stock: Stock = Stock(), layout: Layout = Layout(),
     url = "MAINECONSIGNMENT.COM"
     bar_w = x1 - bar_x0
     bar_h = (H - m) - bar_y0
-    uf = _fit(d, url, _SANS_BOLD, round(bar_h * 0.90), round(bar_w * 0.62), round(W * 0.10))
+    uf = _fit(d, url, _SANS, round(bar_h * 0.90), round(bar_w * 0.62), round(W * 0.10))
     strip = Image.new("L", (round(bar_h * 0.94), round(bar_w * 0.70)), 0)
     sd = ImageDraw.Draw(strip)
     sd.text((strip.width // 2, strip.height // 2), url, font=uf, fill=255, anchor="mm")
@@ -302,7 +307,7 @@ def render_png(tag: Tag, stock: Stock = Stock(), layout: Layout = Layout(),
     # ---- tagline, centred in the open middle -----------------------------
     tl_x1 = bar_x0 - round(W * 0.03)
     tl_y0, tl_y1 = round(layout.tagline_top * H), round(layout.tagline_bottom * H)
-    tf = _fit(d, "something to", _SANS_BOLD, round((tl_x1 - x0) * 0.94),
+    tf = _fit(d, "something to", _SANS, round((tl_x1 - x0) * 0.94),
               round((tl_y1 - tl_y0) * 0.30), round(H * 0.075))
     cx = (x0 + tl_x1) // 2
     lines = ["Have", "something to", "sell?"]
@@ -313,10 +318,32 @@ def render_png(tag: Tag, stock: Stock = Stock(), layout: Layout = Layout(),
     return img
 
 
+def binarize(img: Image.Image, threshold: int = 128) -> Image.Image:
+    """Collapse to pure black and pure white.
+
+    A thermal head has no greys: every pixel either burns or it doesn't. Doing
+    this before anyone looks at a preview means the mottled edges that
+    anti-aliasing produces show up on screen instead of on the roll.
+    """
+    return img.point(lambda p: 0 if p < threshold else 255, mode="L")
+
+
+def render_tag(tag: Tag, stock: Stock = Stock(), layout: Layout = Layout(),
+               zoom: int = 6) -> Image.Image:
+    """One tag exactly as the printer will burn it, magnified for inspection.
+
+    Rendered at native printer resolution and thresholded first, then blown up
+    with nearest-neighbour - so what you see is the real dot pattern, not a
+    smoothed idealisation of it.
+    """
+    img = binarize(render_png(tag, stock, layout, scale=1))
+    return img.resize((img.width * zoom, img.height * zoom), Image.NEAREST)
+
+
 def render_preview(tags, stock: Stock = Stock(), layout: Layout = Layout(),
                    scale: int = 4, cols: int = 3, pad: int = 24) -> Image.Image:
-    """Lay several rendered tags side by side for on-screen checking."""
-    imgs = [render_png(t, stock, layout, scale=scale) for t in tags]
+    """Lay several tags side by side, each at true printer resolution."""
+    imgs = [render_tag(t, stock, layout, zoom=scale) for t in tags]
     w, h = imgs[0].size
     rows = (len(imgs) + cols - 1) // cols
     sheet = Image.new("L", (cols * w + (cols + 1) * pad, rows * h + (rows + 1) * pad), 210)
