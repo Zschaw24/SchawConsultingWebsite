@@ -93,6 +93,11 @@ class Layout:
     # difference between a code that scans first time and one that doesn't.
     qr_top: float = 0.650
     qr_right: float = 0.540
+    #: The QR sits on its own inset, tighter than the label's margin, so it
+    #: reaches the corner and can be torn off in one piece. Watch the die-cut's
+    #: corner radius - too small and the arc clips the bottom-left finder
+    #: pattern, which is the one thing a scanner cannot recover from.
+    qr_margin: float = 0.012
 
     # Tagline centred in what's left
     tagline_top: float = 0.425
@@ -282,9 +287,10 @@ def render_png(tag: Tag, stock: Stock = Stock(), layout: Layout = Layout(),
               (bar_x0 + (bar_w - strip.height) // 2, bar_y0 + (bar_h - strip.width) // 2))
 
     # ---- QR, hard into the bottom-left corner ----------------------------
+    qm = max(1, round(layout.qr_margin * W))
     qr_y0 = round(layout.qr_top * H)
     qr_x1 = round(layout.qr_right * W)
-    qr_side = min(qr_x1 - x0, (H - m) - qr_y0)
+    qr_side = min(qr_x1 - qm, (H - qm) - qr_y0)
     qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M,
                        box_size=10, border=0)
     qr.add_data(tag.qr_url)
@@ -293,7 +299,7 @@ def render_png(tag: Tag, stock: Stock = Stock(), layout: Layout = Layout(),
     modules = qimg.size[0] // 10
     box_px = max(1, qr_side // modules)
     qimg = qimg.resize((box_px * modules, box_px * modules), Image.NEAREST)
-    img.paste(qimg, (x0, H - m - qimg.size[1]))
+    img.paste(qimg, (qm, H - qm - qimg.size[1]))
 
     # ---- code string, reading up the side of the QR ----------------------
     cf = _font(_MONO, max(6, round(H * 0.034)))
@@ -301,8 +307,8 @@ def render_png(tag: Tag, stock: Stock = Stock(), layout: Layout = Layout(),
     cstrip = Image.new("L", (cr - cl + 4, cb - ct + 4), 255)
     ImageDraw.Draw(cstrip).text((2 - cl, 2 - ct), tag.code, font=cf, fill=0)
     cstrip = cstrip.rotate(90, expand=True)
-    img.paste(cstrip, (x0 + qimg.size[0] + round(W * 0.018),
-                       H - m - cstrip.size[1]))
+    img.paste(cstrip, (qm + qimg.size[0] + round(W * 0.018),
+                       H - qm - cstrip.size[1]))
 
     # ---- tagline, centred in the open middle -----------------------------
     tl_x1 = bar_x0 - round(W * 0.03)
